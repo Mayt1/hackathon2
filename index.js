@@ -25,8 +25,8 @@ app.post('/signup', async (req, res) => {
             return res.status(409).send("email já cadastrado");
         }
         const validation = await schemaUser.validateAsync({
-            name: name,
-            email: email,
+            name: name.toUpperCase(),
+            email: email.toUpperCase(),
             password: password,
             confirmPassword: confirmPassword,
             isTeacher:isTeacher,
@@ -177,32 +177,97 @@ app.post("/subject/:idSubject/questions", validateUser, async (req, res) => {
     }
 });
 
-app.post("/questions/:id/answers", validateUser, async (req, res) => {
-    const {title, question} = req.body
-    const {idSubject} = req.params
-    if(!idSubject || !title || !question){
+app.post("/questions/:idQuestion/answers", validateUser, async (req, res) => {
+    const {answer} = req.body
+    const {idQuestion} = req.params
+    if( !idQuestion || !answer ){
         return res.status(422).send("Dados obrigatorios nao enviados")
     }
     try {
-        const subject = await db.collection("subjects").findOne({_id: new ObjectId(idSubject)});
-        if (!subject) return res.status(404).send("Disciplina nao encontrada");
+        const question = await db.collection("questions").findOne({_id: new ObjectId(idQuestion)});
+        if (!question) return res.status(404).send("Questao nao encontrada");
         const {userData} = res.locals
         let date = dayjs().format("YYYY-MM-DD HH:mm").toString()
-        await db.collection("questions").insertOne({
+        await db.collection("answers").insertOne({
             userId: userData._id,
             username: userData.name,
-            subject: subject.subject,
-            title: title,
-            question: question,
+            isTeacher: userData.isTeacher,
+            questionId: idQuestion,
             createdDate: date,
-            answered: false
-        })
-        return res.status(201).send("")
+            answer: answer
+        });
+        await db.collection("questions").updateOne({_id: new ObjectId(idQuestion)}, {$set: {answered: true} });
+        return res.sendStatus(201);
     } catch (e) {
         console.error("token invalido" + e);
         return res.sendStatus(422);
     }
 });
+
+app.get("/questions/:id", async (req, res) => {
+    const {id} = req.params
+    if( !id ){
+        return res.status(422).send("Dados obrigatorios nao enviados")
+    }
+    try {
+        const question = await db.collection('questions').findOne({_id: new ObjectId(id)});
+        const answers = await db.collection('answers').find({questionId: id}).toArray();
+        
+        let resultado = {question, answers}
+        res.status(200).send(resultado);
+    } catch (e) {
+        console.log(e);
+        return res.sendStatus(500);
+    }
+});
+
+
+// app.get("/questions", async (req, res) => {
+//     try {
+        
+        
+//         const questions = await db.collection('questions').find().toArray();
+//         res.status(200).send(questions);
+//     } catch (e) {
+//         console.log(e);
+//         return res.sendStatus(500);
+//     }
+// });
+
+
+app.get("/questions", async (req, res) => {
+    const {materia} = req.query;
+    if(!materia){
+            try {
+                const allproducts = await db.collection('questions').find().toArray();
+                console.log("tamo certo sem filtro");
+                if(allproducts) {
+                    res.send(allproducts);
+                } else {
+                    console.log("Não foi possivel encontrar os produtos")
+                    res.sendStatus(401);
+                }
+            } catch (e) {
+                console.error("Banco nao foi conectado" + e);
+                return res.sendStatus(422);
+            }
+    }else{
+            try {
+                const materiadProducts = await db.collection("questions").find({subject: materia}).toArray();
+                console.log("tamo certo filtro com tipo sem limite");
+                if(materiadProducts) {
+                    res.send(materiadProducts);
+                } else {
+                    console.log("Não foi possivel encontrar os produtos")
+                    res.sendStatus(401);
+                }
+            } catch (e) {
+                console.error("Banco nao foi conectado" + e);
+                return res.sendStatus(422);
+            }
+    }
+});
+
 
 const port = process.env.PORT || 5000;
 app.listen(port, () => {
